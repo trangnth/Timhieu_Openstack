@@ -1,0 +1,410 @@
+# Openstack Rocky 
+## Overview
+Các thành phần chính của OpenStask
+
+|Service	|Code Name|	Description|
+|--|--|--|
+|Identity Service|	Keystone|	User Management|
+|Compute Service|	Nova|	Virtual Machine Management|
+|Image Service|	Glance	|Manages Virtual image like kernel image or disk image|
+|Dashboard|	Horizon|	Provides GUI console via Web browser|
+|Object Storage	|Swift	|Provides Cloud Storage|
+|Block Storage|	Cinder	Storage Management for Virtual Machine|
+|Network Service|	Neutron	|Virtual Networking Management|
+|Orchestration Service	|Heat	|Provides Orchestration function for Virtual Machine|
+|Metering Service|	Ceilometer	|Provides the function of Usage measurement for accounting|
+|Database Service	|Trove|	Database resource Management|
+|Data Processing Service|	Sahara|	Provides Data Processing function|
+|Bare Metal Provisioning|	Ironic|	Provides Bare Metal Provisioning function|
+|Messaging Service|	Zaqar	|Provides Messaging Service function|
+|Shared File System	|Manila|	Provides File Sharing Service|
+|DNS Service	|Designate|	Provides DNS Server Service|
+|Key Manager Service	|Barbican|	Provides Key Management Service|
+
+
+## Install Packstack Rocky
+
+### Chuẩn bị
+
+Controller:
+```sh
+	OS: CentOS 7
+	ens224: 192.168.40.71/24
+	ens192: 192.168.68.71/24
+```
+
+Compute 1:
+```sh
+	OS: CentOS 7
+	ens224: 192.168.40.72/24
+	ens192: 192.168.68.72/24
+```
+
+Compute 2:
+```sh
+	OS: CentOS 7
+	ens224: 192.168.40.73/24
+	ens192: 192.168.68.73/24
+```
+
+
+
+
+
+### Thiết lập ban đầu:
+
+Trên controller, compute1, compute 2 đều thưc hiện một số bước dưới đây
+
+```sh
+sudo systemctl disable firewalld
+sudo systemctl stop firewalld
+sudo systemctl disable NetworkManager
+sudo systemctl stop NetworkManager
+sudo systemctl enable network
+sudo systemctl start network
+
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
+```
+
+Cài đặt:
+
+```sh
+yum -y install centos-release-openstack-rocky epel-release 
+yum update -y
+sudo yum install -y wget crudini fping
+yum -y install openstack-packstack python-pip
+init 6
+```
+
+## Cài đặt packstack
+
+Thực hiện cài đặt trên Controller, sau đó sẽ tự động cài đặt trên các note Compute còn lại:
+
+Sinh file cấu hình:
+
+	packstack --gen-answer-file /root/answers.txt
+
+Sửa một số các thông số trong file cấu hình trên như sau:
+
+```sh
+$ vim /root/answers.txt
+...
+CONFIG_DEFAULT_PASSWORD=password
+...
+CONFIG_KEYSTONE_ADMIN_PW=your_password
+...
+CONFIG_CONTROLLER_HOST=192.168.40.71
+...
+CONFIG_COMPUTE_HOSTS=192.168.40.72, 192.168.40.73
+...
+```
+
+Cài đặt Openstack sử dụng Packstack
+
+	packstack --answer-file /root/answers.txt --timeout=1500
+
+Hoặc cài luôn bằng lệnh sau mà không cần dùng file:
+
+```sh
+packstack --allinone \
+    --default-password=trang1234 \
+    --os-cinder-install=y \
+    --os-neutron-ovs-bridge-mappings=extnet:br-ex \
+    --os-neutron-ovs-bridge-interfaces=br-ex:ens224 \
+    --os-neutron-ovs-bridges-compute=br-ex \
+    --os-neutron-ml2-type-drivers=vxlan,flat \
+    --os-controller-host=192.168.40.71 \
+    --os-compute-hosts=192.168.40.72,192.168.40.73 \
+    --os-neutron-ovs-tunnel-if=ens192 \
+    --provision-demo=n
+```
+
+Thực hiện lệnh dưới để khai báo biến môi trường mỗi khi đăng nhập phiên mới vào máy chủ.
+
+	source /root/keystonerc_admin
+
+Kiểm tra trạng thái của các service NOVA bằng lệnh `openstack compute service list`, nếu state là up thì có thể tiếp tục các bước dưới.
+
+```sh
+[root@trang-40-71 ~(keystone_admin)]# openstack compute service list
++----+------------------+-----------------------+----------+---------+-------+----------------------------+
+| ID | Binary           | Host                  | Zone     | Status  | State | Updated At                 |
++----+------------------+-----------------------+----------+---------+-------+----------------------------+
+|  4 | nova-conductor   | trang-40-71.localhost | internal | enabled | up    | 2018-12-24T09:23:05.000000 |
+|  5 | nova-scheduler   | trang-40-71.localhost | internal | enabled | up    | 2018-12-24T09:23:10.000000 |
+|  6 | nova-consoleauth | trang-40-71.localhost | internal | enabled | up    | 2018-12-24T09:23:04.000000 |
+|  7 | nova-compute     | trang-40-72           | nova     | enabled | up    | 2018-12-24T09:23:09.000000 |
+|  8 | nova-compute     | trang-40-73           | nova     | enabled | up    | 2018-12-24T09:23:08.000000 |
++----+------------------+-----------------------+----------+---------+-------+----------------------------+
+```
+
+Kiểm tra trạng thái của dịch vụ neutron bằng lệnh `neutron agent-list`, nếu có biểu tượng :) thì có thể tiếp tục bước dưới.
+
+```sh
+[root@trang-40-71 ~(keystone_admin)]# neutron agent-list
+neutron CLI is deprecated and will be removed in the future. Use openstack CLI instead.
++--------------------------------------+--------------------+-----------------------+--+-------+----------------+---------------------------+
+| id                                   | agent_type         | host                  |-- | alive | admin_state_up | binary                    |
++--------------------------------------+--------------------+-----------------------+--+-------+----------------+---------------------------+
+| 0ab7098a-8602-42ce-8b22-f4b574d2c0fc | Open vSwitch agent | trang-40-71.localhost |--| :-)   | True           | neutron-openvswitch-agent |
+| 5218c1e6-94e6-4001-b6bd-6faec5b3b1bb | Metadata agent     | trang-40-71.localhost |--| :-)   | True           | neutron-metadata-agent    |
+| 5c107510-f661-4ba5-8b66-ddb24df46b22 | Metering agent     | trang-40-71.localhost |--| :-)   | True           | neutron-metering-agent    |
+| 77d6bfa3-85e8-4a71-9624-02ee4f1bc3d9 | Open vSwitch agent | trang-40-72           |--| :-)   | True           | neutron-openvswitch-agent |
+| 8190199e-59c0-4155-a2ab-c28871fbc972 | Open vSwitch agent | trang-40-73           |--| :-)   | True           | neutron-openvswitch-agent |
+| e1e60355-6358-469d-8d66-63ffda512938 | L3 agent           | trang-40-71.localhost |--| :-)   | True           | neutron-l3-agent          |
+| f1e1b042-e120-4def-8aa0-b24994a37261 | DHCP agent         | trang-40-71.localhost |--| :-)   | True           | neutron-dhcp-agent        |
++--------------------------------------+--------------------+-----------------------+--+-------+----------------+---------------------------+
+```
+
+#### Upload image
+
+```sh
+source ~/keystonerc_admin
+
+curl http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img | glance \
+image-create --name='cirros' \
+--visibility=public \
+--container-format=bare \
+--disk-format=qcow2
+```
+
+hoặc 
+
+```sh
+glance image-create --name "CentOS7" \
+        --visibility=public \
+        --disk-format qcow2 \
+        --container-format bare \
+        --file IMAGE
+```    
+
+Cấu trúc:
+
+```sh
+glance image-create --name "NAME" \
+        --is-public IS_PUBLIC \
+        --disk-format DISK_FORMAT \
+        --container-format CONTAINER_FORMAT \
+        --file IMAGE
+```
+
+#### Tạo network
+
+Tạo network public
+
+```sh
+neutron net-create external_network --provider:network_type flat \
+--provider:physical_network extent  \
+--router:external \
+--shared
+```
+
+Tạo subnet trong network public
+
+```sh
+neutron subnet-create --name public_subnet \
+--enable_dhcp=True --dns-nameserver 8.8.8.8 \
+--allocation-pool=start=192.168.40.120,end=192.168.40.130 \
+--gateway=192.168.40.1 external_network 192.168.40.0/24
+```
+Tạo network private
+
+```sh
+neutron net-create private_network
+neutron subnet-create --name private_subnet private_network 10.10.10.0/24
+
+```
+
+hoặc
+
+```sh
+neutron subnet-create --name private_subnet private_network 192.168.70.0/24 \
+--enable_dhcp=True \
+--allocation-pool=start=192.168.70.120,end=192.168.70.130 
+```
+
+Tạo router tên là Vrouter và add các network vừa tạo ở trên vào router.
+
+```sh
+neutron router-create Vrouter
+neutron router-gateway-set Vrouter external_network
+neutron router-interface-add Vrouter private_subnet
+```
+
+Kiểm tra Port List trên các network vừa tạo `neutron port-list`
+
+```sh
+[root@trang-40-71 ~(keystone_admin)]# neutron port-list
+neutron CLI is deprecated and will be removed in the future. Use openstack CLI instead.
++--------------------------------------+------+----------------------------------+-------------------+---------------------------------------------------------------------------------------+
+| id                                   | name | tenant_id                        | mac_address       | fixed_ips                                                                             |
++--------------------------------------+------+----------------------------------+-------------------+---------------------------------------------------------------------------------------+
+| 0f85533f-6a42-4989-a315-d94664a74721 |      | 8e7fcd19f9224ace851c6c4602bf73bd | fa:16:3e:18:dd:47 | {"subnet_id": "e00975cc-c0fe-4bc1-9216-fccc234b8d57", "ip_address": "192.168.40.120"} |
+| 5d524004-bd41-4938-a44c-c43b9d41bb91 |      | 8e7fcd19f9224ace851c6c4602bf73bd | fa:16:3e:09:d2:0a | {"subnet_id": "bcd26fbd-4114-4252-a213-12163315e417", "ip_address": "10.10.10.1"}     |
+| 7e21d9b8-de62-46d9-a534-269a860d795d |      | 8e7fcd19f9224ace851c6c4602bf73bd | fa:16:3e:c8:9f:9d | {"subnet_id": "bcd26fbd-4114-4252-a213-12163315e417", "ip_address": "10.10.10.2"}     |
+| 96737b6e-8307-4e82-9d17-e3ba3f6fe37c |      |                                  | fa:16:3e:ae:a8:db | {"subnet_id": "e00975cc-c0fe-4bc1-9216-fccc234b8d57", "ip_address": "192.168.40.121"} |
++--------------------------------------+------+----------------------------------+-------------------+---------------------------------------------------------------------------------------+
+```
+
+Ping đến IP trong port list provider
+
+```sh
+[root@trang-40-71 ~(keystone_admin)]# ping 192.168.40.120
+PING 192.168.40.120 (192.168.40.120) 56(84) bytes of data.
+64 bytes from 192.168.40.120: icmp_seq=1 ttl=64 time=1.28 ms
+64 bytes from 192.168.40.120: icmp_seq=2 ttl=64 time=0.105 ms
+^C
+--- 192.168.40.120 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.077/0.487/1.280/0.560 ms
+```
+
+Mở các rule cần thiết cho máy ảo (trong thực tế nên mở các rule cần thiết, tránh mở tất cả các port như hướng dẫn này)
+```sh
+openstack security group rule create --proto icmp default
+openstack security group rule create --proto tcp --dst-port 1:65535 default
+openstack security group rule create --proto udp --dst-port 1:65535 default
+
+openstack project list
+openstack security group list
+```
+
+#### Trước khi vào dashboard để tạo máy ảo ta cần chỉnh sửa một vài lỗi sau
+
+* Không nhận metadata:
+
+Sửa file /etc/neutron/dhcp_agent.ini trên controller node
+
+	vi /etc/neutron/dhcp_agent.ini
+
+Bỏ comment và sửa thành true
+
+	enable_isolated_metadata = True
+
+Khởi động lại các service của neutron trên Controller node.
+
+* Lỗi không kết nối được tới console, gặp phải khi chạy máy ảo với nhiều node compute
+
+Thay hostname trong dòng dưới ở file `/etc/nova/nova.conf` bằng IP của chính máy compute đó.
+
+	vncserver_proxyclient_address=192.168.100.100
+
+Restart lại dịch vụ openstack-nova-compute
+
+
+
+### Một số lệnh kiểm tra
+
+```sh
+openstack user list 
+openstack project list
+openstack service list
+openstack catalog list
+neutron subnet-list
+neutron subnet-delete 003baae3-6e7d-40db-af67-9f9432c7a000
+neutron router-port-list
+```
+
+
+Restart Compute services:
+
+```sh
+service openstack-nova-api restart
+service openstack-nova-cert restart
+service openstack-nova-consoleauth restart
+service openstack-nova-scheduler restart
+service openstack-nova-conductor restart
+service openstack-nova-novncproxy restart
+```
+
+Restart Networking services.
+```sh
+service neutron-server restart
+service neutron-dhcp-agent restart
+service neutron-l3-agent restart
+service neutron-metadata-agent restart
+```
+Also restart your chosen Networking plug-in agent, for example, Open vSwitch.
+```sh
+service neutron-openvswitch-agent restart
+```
+
+Cinder Services restart
+```sh
+service openstack-cinder-api restart 
+service openstack-cinder-backup restart
+service openstack-cinder-scheduler restart
+service openstack-cinder-volume restart
+```
+
+Thao tác với VMs
+```sh
+nova list
+nova get-vnc-console vm01 novnc
+nova delete vm01
+nova reboot vm01
+```
+
+Để xem thông tin các hypervisor:
+
+	nova hypervisor-list
+
+Để check xem máy ảo nào đang chạy trên host:
+
+	nova hypervisor-servers compute1
+
+Để lấy thông tin tóm tắt về mức độ sử dụng tài nguyên của máy ảo trên host:
+
+	nova host-describe compute1
+
+
+### Packstack command
+
+	packstack --allinone --help
+
+### Restart Openstack Service 
+
+https://docs.openstack.org/fuel-docs/latest/userdocs/fuel-user-guide/troubleshooting/restart-service.html
+
+https://stackoverflow.com/questions/30022026/how-to-start-openstack-services
+
+
+### Launch Instance 
+
+```sh
+openstack volume create <volume-name> --description new --type cephhdd --image <id-image> --size 1 --availability-zone nova 
+openstack server create <vm-name>  --availability-zone nova  --volume <id-volume> --flavor <id-flavor> --network <id-network>
+```
+
+https://docs.openstack.org/nova/latest/user/launch-instance-from-volume.html
+
+To create a bootable volume from an image and launch an instance from this volume, use the --block-device parameter
+
+```sh
+openstack server create --flavor FLAVOR --block-device \
+source=SOURCE,id=ID,dest=DEST,size=SIZE,shutdown=PRESERVE,bootindex=INDEX \
+NAME
+
+nova boot --flavor 4c462e7f-9b03-4d31-8503-9f5c8c2c8afb --block-device source=image,id=0a9dd441-e848-4869-a60e-e9cad9fd8189,dest=volume,size=1,shutdown=remove,bootindex=0 --nic net-id=8f89a7fe-6a32-4520-873d-d09521678272 --availability-zone nova trang-test
+```
+
+ 
+
+
+
+## Tham khảo
+
+https://github.com/thaonguyenvan/meditech-thuctap/blob/master/ThaoNV/Tim%20hieu%20OpenStack/docs/setup/Newton/packstack-newton.md
+
+https://access.redhat.com/documentation/en-us/red_hat_openstack_platform/8/html/command-line_interface_reference_guide/packstackclient_commands
+
+https://github.com/thaonguyenvan/meditech-thuctap/blob/master/ThaoNV/Tim%20hieu%20OpenStack/docs/nova/manage-nova.md
+
+https://docs.openstack.org/mitaka/install-guide-ubuntu/launch-instance-networks-selfservice.html#create-the-self-service-network
+
+https://docs.openstack.org/newton/install-guide-ubuntu/launch-instance-networks-provider.html
+
+https://docs.openstack.org/newton/user-guide/cli-nova-launch-instance-from-volume.html
+
+
+
