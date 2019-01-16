@@ -1,0 +1,391 @@
+# Cài đặt Openstack Rocky trên CentOS 7
+
+## 1. Chuẩn bị 
+
+Distro: CentOS 7
+
+Cấu hình:
+
+```
+Controller: 
+	IP: 192.168.40.71
+	    192.168.68.71
+Compute 1:
+	IP: 192.168.40.72
+	    192.168.68.72
+Compute 2:
+	IP: 192.168.40.73
+	    192.168.68.73
+```
+
+
+Mô hình:
+
+<img src="img/1.png">
+
+Phân hoạch IP:
+
+<img src="2.png">
+
+## 2. Thiết lập ban đầu
+
+### Cấu hình IP
+
+Trên Controller:
+
+```sh
+$ sudo vim /etc/sysconfig/network-scripts/ifcfg-ens192
+...
+TYPE=Ethernet
+PROXY_METHOD=none
+BROWSER_ONLY=no
+BOOTPROTO=static
+DEFROUTE=yes
+IPV4_FAILURE_FATAL=no
+IPV6INIT=yes
+IPV6_AUTOCONF=yes
+IPV6_DEFROUTE=yes
+IPV6_FAILURE_FATAL=no
+IPV6_ADDR_GEN_MODE=stable-privacy
+NAME=ens192
+UUID=45bbbd63-3049-4705-b0ca-82be742834cb
+DEVICE=ens192
+ONBOOT=yes
+IPADDR="192.168.68.71"
+PREFIX="24"
+#GATEWAY="192.168.70.1
+#DNS1="8.8.8.8"
+#ZONE=public
+```
+
+```sh
+TYPE=Ethernet
+PROXY_METHOD=none
+BROWSER_ONLY=no
+BOOTPROTO=none
+DEFROUTE=yes
+IPV4_FAILURE_FATAL=no
+IPV6INIT=yes
+IPV6_AUTOCONF=yes
+IPV6_DEFROUTE=yes
+IPV6_FAILURE_FATAL=no
+IPV6_ADDR_GEN_MODE=stable-privacy
+NAME=ens224
+UUID=87776494-3aad-43c7-a8c4-084ef789a642
+DEVICE=ens224
+ONBOOT=yes
+IPADDR="192.168.40.71"
+PREFIX=24
+GATEWAY=192.168.40.1
+DNS1=8.8.8.8
+```
+
+Trên hai node Compute cấu hình tương tự với các thông số đã cho như ở bảng phân hoạch IP phía bên trên
+
+### Thiết lập Hostname trên ba node như sau:
+
+```sh
+$ vim /etc/hosts
+...
+192.168.40.71   trang-40-71
+192.168.40.72   trang-40-72
+192.168.40.73   trang-40-73
+
+$ vim /etc/resolv.conf
+...
+nameserver 8.8.8.8
+```
+
+Tắt firewall và selinux
+
+```sh
+systemctl disable firewalld
+systemctl stop firewalld
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+```
+
+Khởi động lại máy:
+
+	init 6
+
+### Cài đặt Network Time Protocol (NTP)
+
+Cài đặt package
+
+	yum install chrony -y
+
+Chỉnh sửa cấu hình file `/etc/chrony.conf` bằng cách gõ lệnh sau:
+
+```sh
+sed -i "s/server 0.centos.pool.ntp.org iburst/server vn.pool.ntp.org iburst/g" /etc/chrony.conf
+sed -i 's/server 1.centos.pool.ntp.org iburst/#server 1.centos.pool.ntp.org iburst/g' /etc/chrony.conf
+sed -i 's/server 2.centos.pool.ntp.org iburst/#server 2.centos.pool.ntp.org iburst/g' /etc/chrony.conf
+sed -i 's/server 3.centos.pool.ntp.org iburst/#server 3.centos.pool.ntp.org iburst/g' /etc/chrony.conf
+sed -i 's/#allow 192.168\/16/allow 192.168.100.0\/24/g' /etc/chrony.conf
+```
+
+Start dịch vụ và cho khởi động cùng hệ thống
+
+```sh
+systemctl enable chronyd.service
+systemctl start chronyd.service
+```
+
+Kiểm tra lại trên ba note:
+
+```sh
+[root@trang-40-71 ~]# chronyc sources
+210 Number of sources = 3
+MS Name/IP address         Stratum Poll Reach LastRx Last sample               
+===============================================================================
+^- mail.khangthong.vn            2   6    16    45    -39ms[ +744ms] +/-  245ms
+^* static.vnpt.vn                2   6    16    45  -4276ns[ +783ms] +/-   81ms
+^? 2001:19f0:4400:436d:5400>     0   6     0     -     +0ns[   +0ns] +/-    0ns
+```
+
+## 3. Cài đặt
+
+### 3.1 Add the repository of Openstack Rocky
+
+Trên cả 3 node cài đặt:
+
+	yum -y install centos-release-openstack-rocky 
+	sed -i -e "s/enabled=1/enabled=0/g" /etc/yum.repos.d/CentOS-OpenStack-rocky.repo 
+
+Update packages:
+
+	yum upgrade -y
+
+### 3.2 Trên Controller:
+
+#### Install MariaDB server
+
+	yum --enablerepo=centos-openstack-rocky -y install mariadb-server
+
+Tạo một file `/etc/my.cnf.d/openstack.cnf` với nội dung như sau:
+
+```sh
+[mysqld]
+
+bind-address = 192.168.40.71
+default-storage-engine = innodb
+innodb_file_per_table
+max_connections = 4096
+collation-server = utf8_general_ci
+character-set-server = utf8
+```
+
+Start dịch vụ và cấu hình khởi động cùng hệ thống
+
+	systemctl enable mariadb.service
+	systemctl start mariadb.service
+
+Thực hiện security cho mysql, thực hiện theo các bước sau :
+
+```sh
+[root@trang-40-71 ~]# mysql_secure_installation
+...
+Enter current password for root (enter for none): [enter]
+OK, successfully used password, moving on...
+
+Set root password? [Y/n] y
+New password: trang1234
+Re-enter new password: trang1234
+Password updated successfully!
+Reloading privilege tables..
+ ... Success!
+
+Remove anonymous users? [Y/n] y
+ ... Success!
+
+Disallow root login remotely? [Y/n] y
+ ... Success!
+
+Remove test database and access to it? [Y/n] y
+ - Dropping test database...
+ ... Success!
+ - Removing privileges on test database...
+ ... Success!
+
+Reload privilege tables now? [Y/n] y
+ ... Success!
+
+Cleaning up...
+Thanks for using MariaDB!
+```
+
+#### Install RabbitMQ, Memcache
+
+Cài đặt và start dịch vụ:
+
+	yum --enablerepo=epel -y install rabbitmq-server memcached
+	systemctl start rabbitmq-server memcached 
+	systemctl enable rabbitmq-server memcached
+
+Add openstack user (set any password you like for "password")
+```sh
+$ rabbitmqctl add_user openstack trang1234
+Creating user "openstack" ...
+...done.
+$ rabbitmqctl set_permissions openstack ".*" ".*" ".*"
+Setting permissions for user "openstack" in vhost "/" ...
+...done.
+```
+
+Sao lưu cấu hình memcache
+
+	cp /etc/sysconfig/memcached /etc/sysconfig/memcached.origin
+
+Chính sửa cấu hình memcache
+
+	sed -i 's/OPTIONS=\"-l 127.0.0.1,::1\"/OPTIONS=\"-l 192.168.40.71,::1\"/g' /etc/sysconfig/memcached
+	systemctl restart rabbitmq-server memcached
+
+#### Nếu Firewall đang chạy thì cần thêm rule
+
+	firewall-cmd --add-port={11211/tcp,5672/tcp} --permanent
+	firewall-cmd --reload
+
+### 3.3 Cài đặt keystone trên Controller
+
+#### Tạo database cho keystone:
+
+```sh
+$ mysql -u root -ptrang1234
+MariaDB [(none)]> CREATE DATABASE keystone;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'controller' \
+IDENTIFIED BY 'trang1234';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' \
+IDENTIFIED BY 'trang1234';
+MariaDB [(none)]> flush privileges; 
+MariaDB [(none)]> exit
+Bye
+```
+
+Thay thế `KEYSTONE_DBPASS` bằng password của bạn.
+
+#### Install Keystone
+
+	yum --enablerepo=centos-openstack-rocky,epel -y install openstack-keystone openstack-utils python-openstackclient httpd mod_wsgi
+
+#### Configure Keystone
+
+Chỉnh sửa file cấu hình
+
+```sh
+$ vim /etc/keystone/keystone.conf
+...
+# line 609
+memcache_servers = localhost:11211
+
+# add line 742
+connection = mysql+pymysql://keystone:trang1234@controller/keystone
+
+# line 2829
+provider = fernet
+...
+
+$ su -s /bin/bash keystone -c "keystone-manage db_sync"
+```
+
+Tạo key:
+
+	keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone 
+	keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+Bootstrap keystone (replace any password you like for "trang1234" section) (Admin_pass)
+
+```sh
+$ keystone-manage bootstrap --bootstrap-password trang1234 \
+  --bootstrap-admin-url http://controller:5000/v3/ \
+  --bootstrap-internal-url http://controller:5000/v3/ \
+  --bootstrap-public-url http://controller:5000/v3/ \
+  --bootstrap-region-id RegionOne
+```
+
+Nếu SELinux đang enabled, change boolean settings.
+
+```sh
+setsebool -P httpd_use_openstack on 
+setsebool -P httpd_can_network_connect on 
+setsebool -P httpd_can_network_connect_db on 
+```
+
+Nếu filewall đang running
+
+```sh
+firewall-cmd --add-port=5000/tcp --permanent 
+firewall-cmd --reload 
+```
+#### Configure the Apache HTTP server
+
+Sửa file `/etc/httpd/conf/httpd.conf` 
+```sh
+$ cp /etc/httpd/conf/httpd.conf /etc/httpd/conf/httpd.conf.origin
+$ vim /etc/httpd/conf/httpd.conf
+...
+ServerName controller
+```
+
+Enable config for Keystone and start Apache httpd bằng cách tạo liên kết tới file `/usr/share/keystone/wsgi-keystone.conf`
+
+```sh
+ln -s /usr/share/keystone/wsgi-keystone.conf /etc/httpd/conf.d/
+systemctl start httpd 
+systemctl enable httpd 
+```
+
+Recursively change the ownership of the /etc/keystone directory:
+
+	chown -R keystone:keystone /etc/keystone
+
+#### Cấu hình tài khoản Admin
+Chạy các lệnh dưới đây trên Controller 
+
+```sh
+export OS_USERNAME=admin
+export OS_PASSWORD=trang1234
+export OS_PROJECT_NAME=admin
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_AUTH_URL=http://controller:5000/v3
+export OS_IDENTITY_API_VERSION=3
+```
+
+Lưu ý: Cần thay thế **password** mà bạn đã tạo trước đó
+
+Hoặc có thể tạo một file cho tiện sử dụng và chỉnh sửa:
+
+```sh
+$ vim ~/keystonerc
+export OS_PROJECT_DOMAIN_NAME=default
+export OS_USER_DOMAIN_NAME=default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=trang1234
+export OS_AUTH_URL=http://controller:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export PS1='[\u@\h \W(keystone)]\$ '
+
+$ chmod 600 ~/keystonerc 
+$ source ~/keystonerc 
+$ echo "source ~/keystonerc " >> ~/.bash_profile
+```
+
+### 3.4 Create a domain, projects, users, and roles
+
+#### Tạo một domain
+
+Mặc định sẽ luôn tồn tại sẵn một domain `default`, nếu muốn một domain mới tên `example` thì chạy như sau:
+
+```sh
+$ openstack domain create --description "An Example Domain" example
+```
+
+## Tham khảo
+
+https://docs.openstack.org/keystone/rocky/install/keystone-install-obs.html
+
+https://docs.openstack.org/keystone/rocky/install/keystone-install-obs.html
+
+https://www.server-world.info/en/note?os=CentOS_7&p=openstack_rocky&f=4
