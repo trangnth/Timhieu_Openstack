@@ -25,7 +25,7 @@ Mô hình:
 
 Phân hoạch IP:
 
-<img src="2.png">
+<img src="img/2.png">
 
 ## 2. Thiết lập ban đầu
 
@@ -253,10 +253,8 @@ Chính sửa cấu hình memcache
 ```sh
 $ mysql -u root -ptrang1234
 MariaDB [(none)]> CREATE DATABASE keystone;
-MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'controller' \
-IDENTIFIED BY 'trang1234';
-MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' \
-IDENTIFIED BY 'trang1234';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY 'trang1234';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' IDENTIFIED BY 'trang1234';
 MariaDB [(none)]> flush privileges; 
 MariaDB [(none)]> exit
 Bye
@@ -279,13 +277,16 @@ $ vim /etc/keystone/keystone.conf
 memcache_servers = localhost:11211
 
 # add line 742
-connection = mysql+pymysql://keystone:trang1234@controller/keystone
+connection = mysql+pymysql://keystone:trang1234@192.168.40.71/keystone
 
 # line 2829
 provider = fernet
 ...
 
 $ su -s /bin/bash keystone -c "keystone-manage db_sync"
+
+### Nếu có lỗi khi sử dụng keystone thì thử chạy lệnh sau:
+$ /bin/sh -c "keystone-manage db_sync" keystone
 ```
 
 Tạo key:
@@ -379,8 +380,96 @@ $ echo "source ~/keystonerc " >> ~/.bash_profile
 Mặc định sẽ luôn tồn tại sẵn một domain `default`, nếu muốn một domain mới tên `example` thì chạy như sau:
 
 ```sh
-$ openstack domain create --description "An Example Domain" example
+[root@trang-40-71 ~(keystone)]# openstack domain create --description "An Example Domain" example
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | An Example Domain                |
+| enabled     | True                             |
+| id          | b03f4a15b4504cf58c7dfb02ff829d85 |
+| name        | example                          |
+| tags        | []                               |
++-------------+----------------------------------+
 ```
+
+#### Tạo Project
+
+Tạo một project tên `service`
+
+```sh
+[root@trang-40-71 ~(keystone)]# openstack project create --domain default \
+>   --description "Service Project" service
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | Service Project                  |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | 1032cfac3b4f49a086cf850c8fbbfdbc |
+| is_domain   | False                            |
+| name        | service                          |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+```
+
+#### Tạo user 
+
+Tạo một project tên `myproj` 
+
+```sh
+[root@trang-40-71 ~(keystone)]# openstack project create --domain default   --description "Demo Project" myproj
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | Demo Project                     |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | d1875451b4aa48cd9735be24944f9078 |
+| is_domain   | False                            |
+| name        | myproj                           |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+```
+
+Tạo một user `trangnth`
+
+```sh
+[root@trang-40-71 ~(keystone)]# openstack user create --domain default \
+>   --password-prompt trangnth
+User Password:
+Repeat User Password:
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | default                          |
+| enabled             | True                             |
+| id                  | fad629aa03244712a01851d011befa38 |
+| name                | trangnth                         |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+```
+
+Tạo một role mới:
+
+```sh
+[root@trang-40-71 ~(keystone)]# openstack role create myrole
++-----------+----------------------------------+
+| Field     | Value                            |
++-----------+----------------------------------+
+| domain_id | None                             |
+| id        | cfcf7ca3a36b4006bde4c466bc7e7ac0 |
+| name      | myrole                           |
++-----------+----------------------------------+
+```
+
+Add the myrole role to the `myproj` project and `trangnth` user:
+
+	$ openstack role add --project myproj --user trangnth myrole
+
+
 
 ## Tham khảo
 
