@@ -1,0 +1,295 @@
+# Tìm hiểu Keystone - Openstack Identity Service
+
+## 1. Giới thiệu tổng quan về chức năng và lợi ích khi sử dụng Keystone
+
+Môi trường cloud theo mô hình Iaas cung cấp cho người dùng khả năng truy cập vào các tài nguyên quan trọng ví dụ như máy ảo, kho lưu trữ và kết nối mạng. Bảo mật vẫn luôn là vấn đề quan trọng đối với mọi môi trường cloud và trong Openstack thì keystone chính là dịch vụ đảm nhiệm công việc ấy. Nó sẽ chịu trách nhiệm cung cấp các kết nối mang tính bảo mật cao tới các nguồn tài nguyên cloud.
+
+Keystone là  một Openstack service, nó cung cấp các API client authentication, tìm kiếm và phân bố nhiều các tenant bằng OpenStack’s Identity API.
+
+### Chức năng chính của Keystone
+
+#### Identity
+
+Isentity service cung cấp các thông tin xác thực các dữ liệu của user và group. Trong trường hợp các dữ liệu này được quản lý bởi Identity service thì nó cũng được cho phép xử lý tất cả các hoạt động liên quan đến dữ liệu này.
+
+Trong các trường hợp phức tạp hơn, các dữ liệu sẽ được quản lý bởi một backend service có thẩm quyền.
+
+* Nhận diện người dùng đang cố truy cập vào tài nguyên cloud
+* Trong Keystone, Identitythường đại diện cho User 
+* Tại những mô hình OPS nhỏ, Identity của user thường được lưu trữ trong database của keystone. Đối với các mô hình lơn hơn, như các doanh nghiêp, thì một external Identity Provider sẽ thường được sử dụng.
+
+
+**User** đại diện cho API consumer cá nhân. Bản thân mỗi User sẽ thuộc về một domain cụ thể, vì thế tên người dùng chỉ là duy nhất trong domain đó thôi.
+
+**Group** là một tập hợp các người dùng. Mỗi một nhóm cũng được sở hữu trong một domain cụ thế, và là duy nhất trong domain đó, nhưng cho phép trùng lặp giữa các domain khác nhau.
+
+#### Authentication
+
+Là quá  trình xác thực thông tin User.
+
+Keystone cho phép liên kết với các dịch vụ khác để xác thực người dùng như LDAP hoặc AD
+
+Thông thường đối với xác thực người dùng, keystone sẽ dử dụng password, còn lại sẽ sử dụng tokens.
+
+Keystone là thành phần duy nhất tạo ra tokens dùng cho toàn bộ các thành phần khác của OPS để xác thực.
+
+Token được gia hạn về thời gian sử dụng, người dùng sẽ được cấp token mới sau một thời gian nhất định. Cơ chế này sẽ làm giảm nguy cơ user bị đánh cắp mất token.
+
+Hiện tại Keystone đang sử dụng cơ chế bearer token. Có nghĩa là bất cứ ai có token đều có khả năng truy cập vào tài nguyên của cloud, vì vậy việc bảo mật cho token là rất quan trọng.
+
+####  Access Management (Authorization)
+
+Access Management hay còn được gọi là Authorization là quá trình xác định những tài nguyên mà user được phép truy cập tới.
+
+Quản lý truy cập vào tài nguyên của cloud, keystone sử dụng khái niệm role
+
+Trong OPS, keystone kết nối tới các users với những Project hoặc Domain bằng cách gán role cho các user vào những Project hoặc Domain ấy.
+
+
+## 2. Các khái niệm trong Keystone
+
+### 2.1 Project
+
+**Profect** (hay còn gọi là Tenants trong v2.0) đại diện the base unit of ownership trong Openstack, tất cả các nguồn tài nguyên trong Openstack nên được sở hữu bới các project cụ thể. Project sẽ thuộc về một domain cụ thể. 
+
+Nếu project không được gán vào một domain cụ thể thì nó sẽ mặc định được gán vào `default` domain.
+
+Project là nhóm cô lập các tài nguyên
+
+Bản thân projects không sở hữu users hay groups mà users và groups được cấp quyền truy cập tới project sử dụng cơ chế gán role.
+
+Có một role được gán cho user hoặc user group trên project. Có nghĩa là user có một vài cách tiếp cận tới tài nguyên trong project. và các role cụ thể đã gán cho user sẽ xác định loại quyền truy cập và các khả năng mà user đó có quyền.
+
+Việc gán role cho user gọi là `grant` trong Openstack Document.
+
+
+
+### 2.2 Domains
+
+* Ban đầu, không có bất cứ cơ chế nào để hạn chế sự xuất hiện của các project tới những nhóm user khác nhau. Điều này có thể gây ra những sự nhầm lẫn hay xung đột không đáng có giữa các tên của project của các tổ chức khác nhau.
+
+* Tên user cũng vậy và nó hoàn toàn cũng có thể dẫn tới sự nhầm lẫn nếu hai tổ chức có user có tên giống nhau.
+
+* Vì vậy mà khái niệm Domain ra đời, nó được dùng để cô lập danh sách các Projects và Users.
+
+* Domain được định nghĩa là một tập hợp các users, groups, và projects. Nó cho phép người dùng chia nguồn tài nguyên cho từng tổ chức sử dụng mà không phải lo xung đột hay nhầm lẫn.
+
+Trong Identity v3 API, tính duy nhất của các thuộc tính như sau:
+
+* Domain Name.  Globally unique across all domains.
+* Role Name. Unique within the owning domain.
+* User Name. Unique within the owning domain.
+* Project Name. Unique within the owning domain.
+* Group Name. Unique within the owning domain.
+
+### 2.3 Users and User Groups (Actors)
+
+Trong keystone, Users và User Groups là những đối tượng được cấp phép truy cập tới các nguồn tài nguyên được cô lập trong domains và projects.
+
+Groups là một tập hợp các users. Users và User Groups được gọi là `Actors`.
+
+### 2.4 Role
+
+Roles được dùng để hiện thực hóa việc cấp phép trong keystone. Một actor có thể có nhiều roles đối với từng project khác nhau.
+
+Tên của Role sẽ là duy nhất trong domain sở hữu đó.
+
+### 2.5 Role Assignments
+
+Role assignment gồm một Role, một Resource và một Identity.
+
+Role assignment được cấp phát, thu hồi, và có thể được kế thừa giữa các users, groups, project và domains.
+
+### 2.6 Targets
+
+Projects và Domains đều giống nhau ở chỗ cả hai đều là nơi mà role được "gán" lên, vì thế chúng được gọi là targets.
+
+### 2.7 Token
+
+Mỗi user sẽ cần một token để xác minh mỗi khi truy cập vào bất cứ API nào của OPS. Token sẽ được tạo ra tại Keystone.
+
+User sẽ được keystone xác thực và cấp cho token. Token này sẽ chứa các thông tin ủy quyền của user trên cloud.
+
+Token gồm hai phần ID và payload. ID được dùng để đảm bảo nó là duy nhất, payload sẽ chứa thông tin của user.
+
+### 2.8 Catalog
+
+Chứa URLs và endpoints của các services khác trong cloud.
+
+Nếu không có Catalog, users và các ứng dụng sẽ không thể biết được nơi cần chuyển yêu cầu để tạo máy ảo hoặc lưu dữ liệu.
+
+Service này được chia nhỏ thành danh sách các endpoints và mỗi một endpoint sẽ chứa admin URL, internal URL, and public URL.
+
+
+## 3. Identity
+
+* Các thành phần của keystone quản lý:
+	* Projects (hoặc Tenants)
+	* Users or User Groups
+	* Roles
+	* Tokens
+	* Endpoints: là một địa chỉ, có thể là URLs, nơi mà có thể tạo các request đến các Service trong openstack.
+	* Services: Cung cấp 1 hoặc nhiều endpoint. Thông qua các endpoint này mà user có thể truy cập tới các tài nguyên và thực hiện các hoạt động của mình trên tài nguyên mà user có.
+
+* Identity service trong keystone cung cấp các Actors. Nó có thể tới từ nhiều dịch vụ khác nhau như SQL, LDAP, và Federated Identity Providers.
+
+* Các trường hợp sử dungjcuar mỗi backends trong thực tế
+
+| Identity Source|	Use Cases|
+|---|---|
+| SQL |- Testing hoặc developing với OpenStack <br>- Ít users <br>- OpenStack-specific accounts (service users)|
+|LDAP |	- Nếu có sẵn LDAP trong công ty <br>- Sử dụng một mình LDAP nếu bạn có thể tạo service accounts trong LDAP
+|Multiple Backends |	- Được sử dụng nhiều trong các doanh nghiệp <br>- Dùng nếu service user không được cho phép trong LDAP|
+|Identity Provider |	- Nếu bạn muốn có những lợi ích từ cơ chế mới Federated Identity <br>- Nếu đã có sẵn identity provider <br>- Keystone không thể kết nối tới LDAP <br>- Non-LDAP identity source|
+
+
+## 4. Approach to Authentication
+
+Có hai phương pháp để xác thực với keystone là: password và token
+
+### 4.1 Password
+
+Keystone cũng cấp một vài các plugin xác thực kế thừa từ `keystone.auth.plugins.base`. 
+
+Trong plugin `password` cơ bản nhất, cần có hai phần thông tin để xác thực với keystone là: thông tin về Resource và Identity.
+
+Ví dụ gọi đến phương thức POST data cho instance:
+
+```sh
+{
+    "auth": {
+        "identity": {
+            "methods": [
+                "password"
+            ],
+            "password": {
+                "user": {
+                    "id": "0ca8f6",
+                    "password": "secretsecret"
+                }
+            }
+        },
+        "scope": {
+            "project": {
+                "id": "263fd9"
+            }
+        }
+    }
+}
+```
+
+**User** (ID of 0ca8f6) đang cố gắng xin token truy cập **project** (ID of 263fd9)
+
+Ngoài ra có thể thực hiện call tương tự như trên với tên thay vì IDs trong trường hợp muốn biết thêm thông tin về domain. Đây là lý do tên của người dùng (username) là duy nhất trong mỗi domain, nhưng IDs lại là duy nhất trong toàn bộ hệ thống. Vì vậy hãy xem một request về xác thực như dưới đây:
+
+```sh
+{
+    "auth": {
+        "identity": {
+            "methods": [
+                "password"
+            ],
+            "password": {
+                "user": {
+                    "domain": {
+                        "name": "acme"
+                    }
+                    "name": "userA",
+                    "password": "secretsecret"
+                }
+            }
+        },
+        "scope": {
+            "project": {
+                "domain": {
+                    "id": "1789d1"
+                },
+                "name": "project-x"
+            }
+        }
+    }
+}
+```
+
+Cả User và project đều được cung cấp domain ID hoặc domain name để xác định chính xác user và project.
+
+Thêm nữa, nếu muốn biểu diễn các giá trị này bằng biến môi trường thực hiện command như sau:
+
+```sh
+$ export OS_PROJECT_DOMAIN_ID=1789d1
+$ export OS_USER_DOMAIN_NAME=acme
+$ export OS_USERNAME=userA
+$ export OS_PASSWORD=secretsecret
+$ export OS_PROJECT_NAME=project-x
+```
+
+#### What is Scope
+
+Scope section là tùy chọn nhưng thường được sử dụng để user thu thập service catalog. Scope được sử dụng để xác định project nào là user được phép làm việc (phạm vi làm việc của mỗi user), nếu user không có role trong trong project thì request đó bị loại bỏ.
+
+### 4.2 Token
+
+Giống như password, user có thể yêu cầu một token mới từ token hiện tại. Payload của POST request sẽ đơn giản hơn chút
+
+```sh
+{
+    "auth": {
+        "identity": {
+            "methods": [
+                "token"
+            ],
+            "token": {
+                "id": "1789d1"
+            }
+        }
+    }
+}
+```
+
+## 5. Access Management and Authorization
+
+Quản lý toàn bộ các truy cập và quy định các user được sử dụng APIs nào là một trong những yếu tố quyết định khiến keystone trở nên quan trọng trong Openstack. 
+
+Keystone tạo ra các chính sách Role-Based Access Controll (RBAC) được thực thi trên mỗi public API endpoint.
+
+Các chính sách được lưu trữ trong một file, tên thường là policy.json
+
+[Bảng maping của policy target và API](https://docs.openstack.org/keystone/pike/getting-started/policy_mapping.html)
+
+Ví dụ:
+
+|Target|	API|
+|--|--|
+|identity:get_region|	GET /v3/regions/{region_id}|
+|identity:list_regions|	GET /v3/regions|
+|identity:create_region|	POST /v3/regions|
+|identity:update_region|	PATCH /v3/regions/{region_id}|
+|identity:delete_region|	DELETE /v3/regions/{region_id}|
+|identity:get_service	|GET /v3/services/{service_id}|
+|identity:list_services|	GET /v3/services|
+|identity:create_service|	POST /v3/services|
+|identity:update_service|	PATCH /v3/services/{service__id}|
+
+
+## 6. Backends and Service 
+
+Tổng quát về các thành phần trong keystone được quản lý và sử dụng các loại backend khác nhau.
+
+<img src="img/3.png">
+
+## 7. Keystone Workflow
+
+<img src="img/4.png">
+
+<img src="img/5.png">
+
+Nhìn vào hai hình ảnh trên ta đều thấy được, mọi hoạt động, trao đổi giữa người dùng với service, giữa các service với nhau đều phải được xác thực bởi keystone.
+
+
+
+## Tham khảo 
+
+https://github.com/hocchudong/thuctap012017/blob/master/DucPX/OpenStack/Keystone/docs/Overview_Keystone.md#role
+
+https://docs.openstack.org/keystone/pike/getting-started/architecture.html
+
