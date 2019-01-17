@@ -1,7 +1,9 @@
 # Cài đặt Openstack Rocky trên CentOS 7
 
 [1. Chuẩn bị](#pre)
+
 [2. Thiết lập ban đầu](#config)
+
 [3. Cài đặt](#install)
 
 <a name="pre"></a>
