@@ -47,7 +47,7 @@ Tạo domain mới:
 
 Tạo project mới trong domain
 
-	openstack project create <tên-project> --domain <tên-domain> --description "<miêu tả về doamin>"
+	openstack project create <tên-project> --domain <tên-domain> --description "<miêu tả về domain>"
 
 Tạo mới user với domain
 
@@ -57,10 +57,18 @@ openstack user create <tên-user> [--email <email(optional)>] \
   --password <password>
 ```
 
-Xem các role của user 
+Xem các role của user:
+
+	openstack role list --user <tên user> --project <tên project>
+
+Gán role cho user:
 
 	openstack role add --project <tên project> --project-domain <tên domain> --user <tên user> --user-domain <tên domain> <tên role>
+
+
 
 ## Tham khảo
 
 https://docs.openstack.org/python-openstackclient/latest/cli/command-list.html
+
+https://docs.openstack.org/keystone/pike/admin/cli-manage-projects-users-and-roles.html
