@@ -1,0 +1,6 @@
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+192.168.40.71	trang-40-71 controller
+192.168.40.72   trang-40-72 compute1
+192.168.40.73   trang-40-73 compute2
+192.168.40.74   trang-40-74 storage
