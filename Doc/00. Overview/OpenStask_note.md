@@ -44,3 +44,24 @@ echo vm.swappiness=10 >> /etc/sysctl.conf
 sysctl vm.vfs_cache_pressure=50
 echo vm.vfs_cache_pressure=50 >> /etc/sysctl.conf
 ```
+
+
+### Xóa toàn bộ network cũ:
+
+Xóa subnet:
+
+	openstack subnet delete $(openstack subnet list -f value -c ID)
+
+Xóa port:
+
+	openstack port delete $(openstack port list -c ID -f value)
+
+Xóa router:
+
+	openstack router delete <ID_router>
+
+Xóa network:
+
+	openstack network delete $(openstack network list -f value -c ID)
+
+	
