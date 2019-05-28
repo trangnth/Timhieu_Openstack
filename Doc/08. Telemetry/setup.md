@@ -30,11 +30,11 @@ exit
 
 Cài đặt gnocchi service:
 
-	yum --enablerepo=centos-openstack-stein,epel -y install openstack-gnocchi-api openstack-gnocchi-metricd python-gnocchiclient
+    yum --enablerepo=centos-openstack-stein,epel -y install openstack-gnocchi-api openstack-gnocchi-metricd python-gnocchiclient
 
 Copy file cấu hình:
 
-	mv /etc/gnocchi/gnocchi.conf /etc/gnocchi/gnocchi.conf.org 
+    mv /etc/gnocchi/gnocchi.conf /etc/gnocchi/gnocchi.conf.org 
 
 Chỉnh sửa file `/etc/gnocchi/gnocchi.conf`
 
@@ -129,7 +129,7 @@ yum --enablerepo=centos-openstack-stein,epel -y install openstack-ceilometer-cen
 
 Sao lưu file cấu hình
 
-	mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org 
+    mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org 
 
 Chỉnh sửa file cấu hình `/etc/ceilometer/ceilometer.conf`
 
@@ -185,11 +185,11 @@ systemctl enable openstack-ceilometer-central openstack-ceilometer-notification
 
 Cài đặt service:
 
-	yum --enablerepo=centos-openstack-stein,epel -y install openstack-ceilometer-compute
+    yum --enablerepo=centos-openstack-stein,epel -y install openstack-ceilometer-compute
 
 Sao lưu file cấu hình:
 
-	mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org 
+    mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org 
 
 Chỉnh sửa file cấu hình `/etc/ceilometer/ceilometer.conf`
 
@@ -218,9 +218,9 @@ systemctl start openstack-ceilometer-compute
 systemctl enable openstack-ceilometer-compute 
 ```
 
-## 3. Cấu hình Nova Compute sử dung Ceilometer**
+## 3. Cấu hình Nova Compute sử dung Ceilometer
 
-Chỉnh sửa file cấu hifnh `vi /etc/nova/nova.conf`
+Chỉnh sửa file cấu hình `vi /etc/nova/nova.conf`
 
 ```sh
 # add follows into [DEFAULT] section
@@ -234,7 +234,7 @@ driver = messagingv2
 
 Khởi động lại dịch vụ
 
-	systemctl restart openstack-nova-compute 
+    systemctl restart openstack-nova-compute 
 
 **Check resources**
 
@@ -318,7 +318,7 @@ transport_url = rabbit://openstack:trang1234@192.168.40.71
 
 Khởi động lại dịch vụ:
 
-	systemctl restart openstack-glance-api 
+    systemctl restart openstack-glance-api 
 
 **Check các resources**
 
@@ -432,6 +432,206 @@ Truy cập vào địa chỉ web của grafana (ví dụ: 192.168.68.110:3000) a
 <img src="../../img/103.png">
 
 <img src="../../img/104.png">
+
+## Cài đặt và cấu hình cho bản Rocky
+
+### Controller
+
+Tạo user:
+
+    openstack user create --domain default --password-prompt ceilometer
+-> nhập pass
+
+    openstack role add --project service --user ceilometer admin
+    openstack user create --domain default --password-prompt gnocchi
+-> nhập pass
+
+```sh
+openstack service create --name gnocchi --description "Metric Service" metric
+openstack role add --project service --user gnocchi admin
+openstack endpoint create --region RegionOne metric public http://192.168.40.71:8041
+openstack endpoint create --region RegionOne metric internal http://192.168.40.71:8041
+openstack endpoint create --region RegionOne metric admin http://192.168.40.71:8041
+yum --enablerepo=centos-openstack-rocky install -y openstack-gnocchi-api openstack-gnocchi-metricd python-gnocchiclient
+mysql -u root -ptrang1234
+CREATE DATABASE gnocchi;
+GRANT ALL PRIVILEGES ON gnocchi.* TO 'gnocchi'@'localhost' IDENTIFIED BY 'trang1234';
+GRANT ALL PRIVILEGES ON gnocchi.* TO 'gnocchi'@'%' IDENTIFIED BY 'trang1234';
+exit
+mv /etc/gnocchi/gnocchi.conf > /etc/gnocchi/gnocchi.conf.org 
+cat <<EOF > /etc/gnocchi/gnocchi.conf
+[api]
+auth_mode = keystone
+[keystone_authtoken]
+auth_type = password
+auth_url = http://192.168.40.71:5000/v3
+project_domain_name = Default
+user_domain_name = Default
+project_name = service
+username = gnocchi
+password = trang1234
+interface = internalURL
+region_name = RegionOne
+[indexer]
+url = mysql+pymysql://gnocchi:trang1234@192.168.40.71/gnocchi
+[storage]
+# coordination_url is not required but specifying one will improve
+# performance with better workload division across workers.
+# coordination_url = redis://192.168.40.71:6379
+file_basepath = /var/lib/gnocchi
+driver = file
+EOF
+cat <<EOF > /etc/httpd/conf.d/10-gnocchi_wsgi.conf
+# create new
+Listen 8041
+<VirtualHost *:8041>
+  <Directory /usr/bin>
+    AllowOverride None
+    Require all granted
+  </Directory>
+
+  CustomLog /var/log/httpd/gnocchi_wsgi_access.log combined
+  ErrorLog /var/log/httpd/gnocchi_wsgi_error.log
+  SetEnvIf X-Forwarded-Proto https HTTPS=1
+  WSGIApplicationGroup %{GLOBAL}
+  WSGIDaemonProcess gnocchi display-name=gnocchi_wsgi user=gnocchi group=gnocchi processes=6 threads=6
+  WSGIProcessGroup gnocchi
+  WSGIScriptAlias / /usr/bin/gnocchi-api
+</VirtualHost>
+EOF
+chmod 640 /etc/gnocchi/gnocchi.conf 
+chgrp gnocchi /etc/gnocchi/gnocchi.conf
+# su -s /bin/bash gnocchi -c "gnocchi-upgrade" 
+gnocchi-upgrade
+systemctl enable openstack-gnocchi-api.service openstack-gnocchi-metricd.service
+systemctl start openstack-gnocchi-api.service openstack-gnocchi-metricd.service
+systemctl restart httpd
+gnocchi resource list
+yum install --enablerepo=centos-openstack-rocky -y openstack-ceilometer-notification openstack-ceilometer-central python2-ceilometerclient
+cp /etc/ceilometer/pipeline.yaml /etc/ceilometer/pipeline.yaml.org
+```
+
+Chỉnh sửa file cấu hình `/etc/ceilometer/pipeline.yaml`
+
+```sh
+publishers:
+    # set address of Gnocchi
+    # + filter out Gnocchi-related activity meters (Swift driver)
+    # + set default archive policy
+    - gnocchi://?filter_project=service&archive_policy=low
+```
+
+Tiếp tục cấu hình:
+
+```sh
+mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org
+cat <<EOF > /etc/ceilometer/ceilometer.conf
+[DEFAULT]
+transport_url = rabbit://openstack:trang1234@192.168.40.71
+
+[service_credentials]
+auth_type = password
+auth_url = http://192.168.40.71:5000/v3
+project_domain_id = default
+user_domain_id = default
+project_name = service
+username = ceilometer
+password = trang1234
+interface = internalURL
+region_name = RegionOne
+EOF
+chmod 640 /etc/ceilometer/ceilometer.conf
+chgrp ceilometer /etc/ceilometer/ceilometer.conf 
+# su -s /bin/bash ceilometer -c "ceilometer-upgrade --skip-metering-database"
+ceilometer-upgrade
+systemctl enable openstack-ceilometer-notification.service openstack-ceilometer-central.service
+systemctl start openstack-ceilometer-notification.service openstack-ceilometer-central.service
+```
+
+**Cấu hình Glance:**
+
+Sửa file `/etc/glance/glance-api.conf` và `/etc/glance/glance-registry.conf`
+
+```sh
+[DEFAULT]
+...
+transport_url = rabbit://openstack:trang1234@192.168.40.71
+
+[oslo_messaging_notifications]
+...
+driver = messagingv2
+```
+
+Khởi động lại dịch vụ:
+
+    systemctl restart openstack-glance-api.service openstack-glance-registry.service
+
+**Cấu hình Neutron service**
+
+Chỉnh sửa file `/etc/neutron/neutron.conf`
+
+```sh
+[oslo_messaging_notifications]
+...
+driver = messagingv2
+```
+
+Khởi động lại dịch vụ:
+
+    systemctl restart neutron-server.service
+
+
+### Compute
+
+Cài đặt và cấu hình:
+
+```sh
+yum --enablerepo=centos-openstack-rocky install -y openstack-ceilometer-compute
+cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org
+cat <<EOF > /etc/ceilometer/ceilometer.conf 
+[DEFAULT]
+transport_url = rabbit://openstack:trang1234@192.168.40.71
+
+[service_credentials]
+auth_url = http://192.168.40.71:5000
+project_domain_id = default
+user_domain_id = default
+auth_type = password
+username = ceilometer
+project_name = service
+password = trang1234
+interface = internalURL
+region_name = RegionOne
+EOF
+chmod 640 /etc/ceilometer/ceilometer.conf 
+chgrp ceilometer /etc/ceilometer/ceilometer.conf 
+```
+Cấu hình nova compute sử dụng Telemetry, chỉnh file `/etc/nova/nova.conf`
+
+```sh
+[DEFAULT]
+...
+instance_usage_audit = True
+instance_usage_audit_period = hour
+notify_on_state_change = vm_and_task_state
+
+[oslo_messaging_notifications]
+...
+driver = messagingv2
+```
+
+Khởi động dịch vụ:
+
+```sh
+systemctl enable openstack-ceilometer-compute.service
+systemctl start openstack-ceilometer-compute.service
+systemctl restart openstack-nova-compute.service
+echo export OS_AUTH_TYPE=password >> /root/keystonerc
+source /root/keystonerc
+```
+
+
+
 
 
 ## Tham khảo
