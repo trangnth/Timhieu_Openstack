@@ -1,4 +1,10 @@
 #!/usr/bin/python
+
+#
+# Script send notify aodh via slack
+#
+
+
 from flask import Flask, request
 import requests
 import json

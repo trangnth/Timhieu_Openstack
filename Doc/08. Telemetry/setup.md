@@ -421,6 +421,28 @@ Cài đặt plugin:
 sudo grafana-cli plugins install gnocchixyz-gnocchi-datasource
 ```
 
+**Trên controller**
+
+* Sửa file  `/etc/gnocchi/gnocchi.conf`:
+    ```
+    [cors]
+    allowed_origin = http://192.168.40.129:3000
+    ```
+* Sửa file `/etc/keystone/keystone.conf`
+
+    ```
+    [cors]
+    allowed_origin = http://192.168.40.129:3000
+    allow_methods = GET,PUT,POST,DELETE,PATCH
+    allow_headers = X-Auth-Token,X-Openstack-Request-Id,X-Subject-Token,X-Project-Id,X-Project-Name,X-Project-Domain-Id,X-Project-Domain-Name,X-Domain-Id,X-Domain-Name
+    ```
+* Khởi động lại dịch vụ:
+    ```
+    systemctl restart httpd
+    systemctl restart openstack-gnocchi-*
+    ```
+
+
 Truy cập vào địa chỉ web của grafana (ví dụ: 192.168.68.110:3000) add data source như sau:
 
 <img src="../../img/100.png">
@@ -433,53 +455,63 @@ Truy cập vào địa chỉ web của grafana (ví dụ: 192.168.68.110:3000) a
 
 <img src="../../img/104.png">
 
+Ví dụ một database:
+
+<img src="../../img/107.png">
+
+
 ## Cài đặt và cấu hình cho bản Rocky
 
 ### Controller
 
 Tạo user:
-
-    openstack user create --domain default --password-prompt ceilometer
--> nhập pass
-
-    openstack role add --project service --user ceilometer admin
-    openstack user create --domain default --password-prompt gnocchi
--> nhập pass
-
 ```sh
-openstack service create --name gnocchi --description "Metric Service" metric
+openstack user create --domain default --project service --password trang1234 gnocchi
 openstack role add --project service --user gnocchi admin
+openstack service create --name gnocchi --description "Metric Service" metric 
+export controller=192.168.40.71
 openstack endpoint create --region RegionOne metric public http://192.168.40.71:8041
 openstack endpoint create --region RegionOne metric internal http://192.168.40.71:8041
 openstack endpoint create --region RegionOne metric admin http://192.168.40.71:8041
-yum --enablerepo=centos-openstack-rocky install -y openstack-gnocchi-api openstack-gnocchi-metricd python-gnocchiclient
+
 mysql -u root -ptrang1234
 CREATE DATABASE gnocchi;
 GRANT ALL PRIVILEGES ON gnocchi.* TO 'gnocchi'@'localhost' IDENTIFIED BY 'trang1234';
 GRANT ALL PRIVILEGES ON gnocchi.* TO 'gnocchi'@'%' IDENTIFIED BY 'trang1234';
+flush privileges;
 exit
+yum --enablerepo=centos-openstack-rocky,epel -y install openstack-gnocchi-api openstack-gnocchi-metricd python2-gnocchiclient
 mv /etc/gnocchi/gnocchi.conf > /etc/gnocchi/gnocchi.conf.org 
 cat <<EOF > /etc/gnocchi/gnocchi.conf
+[DEFAULT]
+log_dir = /var/log/gnocchi
+
 [api]
 auth_mode = keystone
+
+[database]
+backend = sqlalchemy
+
+# MariaDB connection info
+[indexer]
+url = mysql+pymysql://gnocchi:trang1234@192.168.40.71/gnocchi
+
+[storage]
+driver = file
+file_basepath = /var/lib/gnocchi
+
+# Keystone auth info
 [keystone_authtoken]
+www_authenticate_uri = http://192.168.40.71:5000
+auth_url = http://192.168.40.71:5000
+memcached_servers = 192.168.40.71:11211
 auth_type = password
-auth_url = http://192.168.40.71:5000/v3
-project_domain_name = Default
-user_domain_name = Default
+project_domain_name = default
+user_domain_name = default
 project_name = service
 username = gnocchi
 password = trang1234
-interface = internalURL
-region_name = RegionOne
-[indexer]
-url = mysql+pymysql://gnocchi:trang1234@192.168.40.71/gnocchi
-[storage]
-# coordination_url is not required but specifying one will improve
-# performance with better workload division across workers.
-# coordination_url = redis://192.168.40.71:6379
-file_basepath = /var/lib/gnocchi
-driver = file
+service_token_roles_required = true
 EOF
 cat <<EOF > /etc/httpd/conf.d/10-gnocchi_wsgi.conf
 # create new
@@ -501,70 +533,159 @@ Listen 8041
 EOF
 chmod 640 /etc/gnocchi/gnocchi.conf 
 chgrp gnocchi /etc/gnocchi/gnocchi.conf
-# su -s /bin/bash gnocchi -c "gnocchi-upgrade" 
-gnocchi-upgrade
-systemctl enable openstack-gnocchi-api.service openstack-gnocchi-metricd.service
-systemctl start openstack-gnocchi-api.service openstack-gnocchi-metricd.service
+su -s /bin/bash gnocchi -c "gnocchi-upgrade" 
+#gnocchi-upgrade
+systemctl enable openstack-gnocchi-metricd.service
+systemctl start openstack-gnocchi-metricd.service
 systemctl restart httpd
+echo export OS_AUTH_TYPE=password >> /root/keystonerc
+source /root/keystonerc
 gnocchi resource list
-yum install --enablerepo=centos-openstack-rocky -y openstack-ceilometer-notification openstack-ceilometer-central python2-ceilometerclient
+
+openstack user create --domain default --project service --password trang1234 ceilometer
+openstack role add --project service --user ceilometer admin
+openstack service create --name ceilometer --description "OpenStack Telemetry Service" metering
+yum --enablerepo=centos-openstack-rocky,epel -y install openstack-ceilometer-central openstack-ceilometer-notification python2-ceilometerclient
 cp /etc/ceilometer/pipeline.yaml /etc/ceilometer/pipeline.yaml.org
-```
-
-Chỉnh sửa file cấu hình `/etc/ceilometer/pipeline.yaml`
-
-```sh
-publishers:
-    # set address of Gnocchi
-    # + filter out Gnocchi-related activity meters (Swift driver)
-    # + set default archive policy
-    - gnocchi://?filter_project=service&archive_policy=low
-```
-
-Tiếp tục cấu hình:
-
-```sh
-mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org
+mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org 
 cat <<EOF > /etc/ceilometer/ceilometer.conf
+# create new
 [DEFAULT]
+# RabbitMQ connection info
 transport_url = rabbit://openstack:trang1234@192.168.40.71
 
-[service_credentials]
+[api]
+auth_mode = keystone
+
+[dispatcher_gnocchi]
+filter_service_activity = False
+
+# Keystone auth info (with gnocchi)
+[keystone_authtoken]
+www_authenticate_uri = http://192.168.40.71:5000
+auth_url = http://192.168.40.71:5000
+memcached_servers = 192.168.40.71:11211
 auth_type = password
-auth_url = http://192.168.40.71:5000/v3
-project_domain_id = default
-user_domain_id = default
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = gnocchi
+password = trang1234
+
+# Keystone auth info (with ceilometer)
+[service_credentials]
+auth_url = http://192.168.40.71:5000
+memcached_servers = 192.168.40.71:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
 project_name = service
 username = ceilometer
 password = trang1234
-interface = internalURL
-region_name = RegionOne
 EOF
-chmod 640 /etc/ceilometer/ceilometer.conf
+chmod 640 /etc/ceilometer/ceilometer.conf 
 chgrp ceilometer /etc/ceilometer/ceilometer.conf 
-# su -s /bin/bash ceilometer -c "ceilometer-upgrade --skip-metering-database"
-ceilometer-upgrade
-systemctl enable openstack-ceilometer-notification.service openstack-ceilometer-central.service
-systemctl start openstack-ceilometer-notification.service openstack-ceilometer-central.service
+su -s /bin/bash ceilometer -c "ceilometer-upgrade --skip-metering-database" 
+systemctl start openstack-ceilometer-central openstack-ceilometer-notification
+systemctl enable openstack-ceilometer-central openstack-ceilometer-notification 
 ```
+
+
+
+
+
 
 **Cấu hình Glance:**
 
 Sửa file `/etc/glance/glance-api.conf` và `/etc/glance/glance-registry.conf`
 
 ```sh
-[DEFAULT]
-...
-transport_url = rabbit://openstack:trang1234@192.168.40.71
-
+# add to the end
 [oslo_messaging_notifications]
-...
 driver = messagingv2
+# RabbitMQ connection info
+transport_url = rabbit://openstack:trang1234@192.168.40.71
 ```
 
 Khởi động lại dịch vụ:
 
     systemctl restart openstack-glance-api.service openstack-glance-registry.service
+
+**Cấu hình Cinder service**
+
+Chỉnh sửa file `/etc/cinder/cinder.conf` trên tất cả các node mà cinder đang chạy:
+
+```sh
+# add to the end
+[oslo_messaging_notifications]
+driver = messagingv2
+transport_url = rabbit://openstack:trang1234@192.168.40.71
+```
+
+Khởi động lại dịch vụ:
+
+    systemctl restart openstack-cinder-api openstack-cinder-scheduler 
+
+
+Tạo một vài volume mới và xem có thể lấy được nhưng thông số gì:
+
+```sh
+[root@trang-40-71 ~(openstack)]# openstack metric resource list -c type -c id -c  original_resource_id
++--------------------------------------+----------------------------+-----------------------------------------------------------------------+
+| id                                   | type                       | original_resource_id                                                  |
++--------------------------------------+----------------------------+-----------------------------------------------------------------------+
+| cbf34a71-3b25-555a-8769-e587fb6ba017 | instance_network_interface | instance-0000004d-90380863-a833-4058-93fc-eac897e6a679-tap35550250-7b |
+| 7c503ccb-2947-584a-a48f-1d80443862ed | instance_network_interface | instance-0000004b-a871e8b4-afa4-4f47-a23f-4eab3a183cc5-tap3df9bb7b-94 |
+| 38ff9495-18fe-52c5-b70f-e2fc0c79c078 | instance_network_interface | instance-0000004c-5ecdadb9-1dc9-4f9f-81b3-17d1305ab082-tapfc4c0e8e-1c |
+| b404efa1-d7af-556f-adf5-60bac719238f | instance_disk              | 5ecdadb9-1dc9-4f9f-81b3-17d1305ab082-vda                              |
+| 1089e20a-56ae-56e7-a49e-995b85c5aa0d | instance_network_interface | instance-0000004e-8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d-tap169a3e41-de |
+| 8d22949e-eac2-53a8-96ca-75be763a67c0 | instance_disk              | 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d-vda                              |
+| 5143402c-ed50-5e9e-9933-aa7b7eb7e6c6 | instance_disk              | 90380863-a833-4058-93fc-eac897e6a679-vda                              |
+| 6ae6c671-f988-55cf-ab6b-9b83035f37e0 | instance_disk              | a871e8b4-afa4-4f47-a23f-4eab3a183cc5-vda                              |
+| a871e8b4-afa4-4f47-a23f-4eab3a183cc5 | instance                   | a871e8b4-afa4-4f47-a23f-4eab3a183cc5                                  |
+| 90380863-a833-4058-93fc-eac897e6a679 | instance                   | 90380863-a833-4058-93fc-eac897e6a679                                  |
+| 5ecdadb9-1dc9-4f9f-81b3-17d1305ab082 | instance                   | 5ecdadb9-1dc9-4f9f-81b3-17d1305ab082                                  |
+| 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d | instance                   | 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d                                  |
+| 5dac05c9-0e44-5dca-b0c3-308868c3c872 | volume_provider            | trang-40-74@lvm2                                                      |
+| 12383834-8fe3-5070-b2e4-5b3a9d339563 | volume_provider_pool       | trang-40-74@lvm#lvm                                                   |
+| 5ac3ce1b-d1a3-56b5-a872-7bd176dabe16 | volume_provider_pool       | trang-40-74@lvm2#lvm2                                                 |
+| 47397e38-d8fe-5e2d-af70-f01087530e57 | volume_provider            | trang-40-74@lvm                                                       |
+| 601769b0-4499-421e-ab28-6d243ed36247 | volume                     | 601769b0-4499-421e-ab28-6d243ed36247                                  |
+| af1f03ef-6089-43ea-80cd-c4cf25eca854 | volume                     | af1f03ef-6089-43ea-80cd-c4cf25eca854                                  |
+| 7f3f17cd-ec38-4972-93bd-441bb0394c8d | volume                     | 7f3f17cd-ec38-4972-93bd-441bb0394c8d                                  |
+| e0aa2d5c-5c44-4d3b-849b-a708a1207913 | volume                     | e0aa2d5c-5c44-4d3b-849b-a708a1207913                                  |
+| da91283e-2ede-57b1-8281-3cfeb7d90039 | volume_provider_pool       | trang-40-74@lvm#LVM                                                   |
+| d2dda93c-abb8-446d-a2bf-d3e86dae6a0a | volume                     | d2dda93c-abb8-446d-a2bf-d3e86dae6a0a                                  |
+| 2035e513-0a4b-5de3-aba3-649cbfd79604 | volume_provider_pool       | trang-40-74@lvm1#lvm1                                                 |
+| bcaf1163-de84-5f77-8b96-003eed6d3829 | volume_provider            | trang-40-74@lvm1                                                      |
+| b8f3b99c-4cc9-4b58-9400-cd51d87944de | volume                     | b8f3b99c-4cc9-4b58-9400-cd51d87944de                                  |
++--------------------------------------+----------------------------+-----------------------------------------------------------------------+
+[root@trang-40-71 ~(openstack)]# openstack metric resource show b8f3b99c-4cc9-4b58-9400-cd51d87944de
++-----------------------+-------------------------------------------------------------------+
+| Field                 | Value                                                             |
++-----------------------+-------------------------------------------------------------------+
+| created_by_project_id | 46f7dedbbaf843049cd5a5e72e6dc752                                  |
+| created_by_user_id    | 25e98294cc204e3a9f1bd3ba250685ba                                  |
+| creator               | 25e98294cc204e3a9f1bd3ba250685ba:46f7dedbbaf843049cd5a5e72e6dc752 |
+| ended_at              | None                                                              |
+| id                    | b8f3b99c-4cc9-4b58-9400-cd51d87944de                              |
+| metrics               | volume.size: d299d832-3f05-454c-8d39-c76a23c8cd09                 |
+| original_resource_id  | b8f3b99c-4cc9-4b58-9400-cd51d87944de                              |
+| project_id            | db93189111d44af1b22d43e849de6e34                                  |
+| revision_end          | None                                                              |
+| revision_start        | 2019-05-29T02:32:59.283243+00:00                                  |
+| started_at            | 2019-05-29T02:32:59.283112+00:00                                  |
+| type                  | volume                                                            |
+| user_id               | 4c9b0a695e294ad3b9615e36f75858e7                                  |
++-----------------------+-------------------------------------------------------------------+
+[root@trang-40-71 ~(openstack)]# openstack metric  measures show d299d832-3f05-454c-8d39-c76a23c8cd09
++---------------------------+-------------+-------+
+| timestamp                 | granularity | value |
++---------------------------+-------------+-------+
+| 2019-05-29T09:30:00+07:00 |       300.0 |   1.0 |
++---------------------------+-------------+-------+
+```
+
 
 **Cấu hình Neutron service**
 
@@ -581,57 +702,139 @@ Khởi động lại dịch vụ:
     systemctl restart neutron-server.service
 
 
+
 ### Compute
 
 Cài đặt và cấu hình:
 
 ```sh
-yum --enablerepo=centos-openstack-rocky install -y openstack-ceilometer-compute
-cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org
-cat <<EOF > /etc/ceilometer/ceilometer.conf 
+yum --enablerepo=centos-openstack-rocky,epel -y install openstack-ceilometer-compute
+mv /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.org 
+cat <<EOF > /etc/ceilometer/ceilometer.conf
+# create new
 [DEFAULT]
+# RabbitMQ connection info
 transport_url = rabbit://openstack:trang1234@192.168.40.71
 
 [service_credentials]
 auth_url = http://192.168.40.71:5000
-project_domain_id = default
-user_domain_id = default
+memcached_servers = 192.168.40.71:11211
 auth_type = password
-username = ceilometer
+project_domain_name = default
+user_domain_name = default
 project_name = service
+username = ceilometer
 password = trang1234
-interface = internalURL
-region_name = RegionOne
 EOF
 chmod 640 /etc/ceilometer/ceilometer.conf 
 chgrp ceilometer /etc/ceilometer/ceilometer.conf 
+systemctl start openstack-ceilometer-compute 
+systemctl enable openstack-ceilometer-compute
+echo export OS_AUTH_TYPE=password >> /root/keystonerc
+source /root/keystonerc 
 ```
-Cấu hình nova compute sử dụng Telemetry, chỉnh file `/etc/nova/nova.conf`
+
+Chỉnh sửa file `/etc/nova/nova.conf` 
 
 ```sh
-[DEFAULT]
-...
+# add follows into [DEFAULT] section
 instance_usage_audit = True
 instance_usage_audit_period = hour
 notify_on_state_change = vm_and_task_state
-
+# add to the end
 [oslo_messaging_notifications]
-...
 driver = messagingv2
 ```
 
-Khởi động dịch vụ:
+Khởi động lại dịch vụ:
+
+    systemctl restart openstack-nova-compute 
+
+
+Kết quả:
 
 ```sh
-systemctl enable openstack-ceilometer-compute.service
-systemctl start openstack-ceilometer-compute.service
-systemctl restart openstack-nova-compute.service
-echo export OS_AUTH_TYPE=password >> /root/keystonerc
-source /root/keystonerc
+[root@trang-40-71 ~(openstack)]# openstack metric resource list -c id -c type
++--------------------------------------+----------------------------+
+| id                                   | type                       |
++--------------------------------------+----------------------------+
+| cbf34a71-3b25-555a-8769-e587fb6ba017 | instance_network_interface |
+| 7c503ccb-2947-584a-a48f-1d80443862ed | instance_network_interface |
+| 38ff9495-18fe-52c5-b70f-e2fc0c79c078 | instance_network_interface |
+| b404efa1-d7af-556f-adf5-60bac719238f | instance_disk              |
+| 1089e20a-56ae-56e7-a49e-995b85c5aa0d | instance_network_interface |
+| 8d22949e-eac2-53a8-96ca-75be763a67c0 | instance_disk              |
+| 5143402c-ed50-5e9e-9933-aa7b7eb7e6c6 | instance_disk              |
+| 6ae6c671-f988-55cf-ab6b-9b83035f37e0 | instance_disk              |
+| a871e8b4-afa4-4f47-a23f-4eab3a183cc5 | instance                   |
+| 90380863-a833-4058-93fc-eac897e6a679 | instance                   |
+| 5ecdadb9-1dc9-4f9f-81b3-17d1305ab082 | instance                   |
+| 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d | instance                   |
+| 5dac05c9-0e44-5dca-b0c3-308868c3c872 | volume_provider            |
+| 12383834-8fe3-5070-b2e4-5b3a9d339563 | volume_provider_pool       |
+| 5ac3ce1b-d1a3-56b5-a872-7bd176dabe16 | volume_provider_pool       |
+| 47397e38-d8fe-5e2d-af70-f01087530e57 | volume_provider            |
++--------------------------------------+----------------------------+
+[root@trang-40-71 ~(openstack)]# openstack metric resource show 5dac05c9-0e44-5dca-b0c3-308868c3c872
++-----------------------+-----------------------------------------------------------------------------+
+| Field                 | Value                                                                       |
++-----------------------+-----------------------------------------------------------------------------+
+| created_by_project_id | 46f7dedbbaf843049cd5a5e72e6dc752                                            |
+| created_by_user_id    | 25e98294cc204e3a9f1bd3ba250685ba                                            |
+| creator               | 25e98294cc204e3a9f1bd3ba250685ba:46f7dedbbaf843049cd5a5e72e6dc752           |
+| ended_at              | None                                                                        |
+| id                    | 5dac05c9-0e44-5dca-b0c3-308868c3c872                                        |
+| metrics               | volume.provider.capacity.allocated: 7a40b377-8dd2-46a2-8140-fb0930fdfd79    |
+|                       | volume.provider.capacity.free: c7bb00d7-828c-4921-9a2d-783dbacf01e5         |
+|                       | volume.provider.capacity.provisioned: ef0ebb0a-3d2e-4d1b-b553-14ac78078f2d  |
+|                       | volume.provider.capacity.total: 28f2963e-31e6-4e52-8ce2-d04aa5c50bb7        |
+|                       | volume.provider.capacity.virtual_free: e1be271b-585c-4955-9a1d-cc792106f37e |
+| original_resource_id  | trang-40-74@lvm2                                                            |
+| project_id            | None                                                                        |
+| revision_end          | None                                                                        |
+| revision_start        | 2019-05-28T08:59:40.148106+00:00                                            |
+| started_at            | 2019-05-28T08:59:40.148060+00:00                                            |
+| type                  | volume_provider                                                             |
+| user_id               | None                                                                        |
++-----------------------+-----------------------------------------------------------------------------+
+[root@trang-40-71 ~(openstack)]# openstack metric resource show 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d
++-----------------------+-------------------------------------------------------------------+
+| Field                 | Value                                                             |
++-----------------------+-------------------------------------------------------------------+
+| created_by_project_id | 46f7dedbbaf843049cd5a5e72e6dc752                                  |
+| created_by_user_id    | 25e98294cc204e3a9f1bd3ba250685ba                                  |
+| creator               | 25e98294cc204e3a9f1bd3ba250685ba:46f7dedbbaf843049cd5a5e72e6dc752 |
+| ended_at              | None                                                              |
+| id                    | 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d                              |
+| metrics               | cpu.delta: 7e706886-35da-4b15-89d2-3e0ee7aacbe7                   |
+|                       | cpu: 913c5f45-c21d-4a76-9b9f-69b88b71d4f6                         |
+|                       | cpu_util: 6026e302-7f93-4d18-941d-d2ea5b92f721                    |
+|                       | disk.ephemeral.size: c3011f0c-e71b-45ae-9cc2-93464bace854         |
+|                       | disk.root.size: 44607249-f070-4e6e-af53-e2330dce1556              |
+|                       | memory.usage: ff5502b5-3e80-4bbb-a5a0-1063218b63f2                |
+|                       | memory: 1fc3c586-7f50-42b4-a869-84b607350167                      |
+|                       | vcpus: 9db1ece4-462b-49c3-8404-e41df664e74a                       |
+| original_resource_id  | 8af04bc7-9de9-4db4-bdcb-2d0fb02cde1d                              |
+| project_id            | db93189111d44af1b22d43e849de6e34                                  |
+| revision_end          | None                                                              |
+| revision_start        | 2019-05-28T08:56:18.178457+00:00                                  |
+| started_at            | 2019-05-28T08:45:34.720036+00:00                                  |
+| type                  | instance                                                          |
+| user_id               | 4c9b0a695e294ad3b9615e36f75858e7                                  |
++-----------------------+-------------------------------------------------------------------+
+[root@trang-40-71 ~(openstack)]# openstack metric measures show 6026e302-7f93-4d18-941d-d2ea5b92f721
++---------------------------+-------------+--------------+
+| timestamp                 | granularity |        value |
++---------------------------+-------------+--------------+
+| 2019-05-28T15:50:00+07:00 |       300.0 |  2.346268789 |
+| 2019-05-28T15:55:00+07:00 |       300.0 | 2.3907631874 |
+| 2019-05-28T16:00:00+07:00 |       300.0 |  2.366121804 |
++---------------------------+-------------+--------------+
 ```
 
+Một ví dụ được hiển thị trên grafana:
 
-
+<img src="../../img/108.png">
 
 
 ## Tham khảo
