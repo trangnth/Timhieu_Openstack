@@ -114,3 +114,95 @@ Content-Type: application/json
 
 {"token": {"issued_at": "2019-05-17T03:17:04.000000Z", "audit_ids": ["RE_raWvxQ8SeukRkp-aibg"], "methods": ["password"], "expires_at": "2019-05-17T04:17:04.000000Z", "user": {"password_expires_at": null, "domain": {"id": "default", "name": "Default"}, "id": "4c9b0a695e294ad3b9615e36f75858e7", "name": "admin"}}}
 ```
+
+
+### Tạo user login
+
+```sh
+openstack project create demo
+openstack user create --domain default --project demo --password trang1234 demo
+openstack project set project_demo_ID --enable
+openstack user set demo --enable
+openstack role create demo
+openstack role add --user demo --project demo demo
+openstack role assignment list --user demo
+openstack role show demo
+```
+
+### Managing port level security
+
+* Pair port cho MAC address (trường hợp là hiện đang có một cụm OPS vật lý và muốn cài cụm OPS khác trên các máy ảo của cụm này)
+
+```sh
+# Danh sách các port của máy ảo trên openstack 
+[root@mdt32 ~]# nova interface-list trang-ctl1
++------------+--------------------------------------+--------------------------------------+---------------+-------------------+
+| Port State | Port ID                              | Net ID                               | IP addresses  | MAC Addr          |
++------------+--------------------------------------+--------------------------------------+---------------+-------------------+
+| ACTIVE     | 9fb1d78a-9201-4fc5-82b4-06822c951ff5 | 935eb361-58a3-4de1-8c4e-2b63157ab9b2 | 192.168.40.81 | fa:16:3e:de:4c:b6 |
+| ACTIVE     | ea117a13-0cbb-49e0-9d4b-0243d747821b | 76b621d1-84f8-4986-a06d-b61213c5aea4 | 192.168.50.81 | fa:16:3e:63:d4:f3 |
++------------+--------------------------------------+--------------------------------------+---------------+-------------------+
+
+# Interface trên máy ảo
+[root@trang-ctl1 ~(openstack)]$ ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether fa:16:3e:de:4c:b6 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.40.81/24 brd 192.168.40.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master ovs-system state UP group default qlen 1000
+    link/ether fa:16:3e:63:d4:f3 brd ff:ff:ff:ff:ff:ff
+4: ovs-system: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether 2e:48:58:67:dc:b9 brd ff:ff:ff:ff:ff:ff
+5: br-int: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether ea:2d:ea:2d:11:40 brd ff:ff:ff:ff:ff:ff
+6: br-tun: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether e2:f3:0f:5d:b7:44 brd ff:ff:ff:ff:ff:ff
+7: br-provider: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether 96:e0:1d:a6:3d:4c brd ff:ff:ff:ff:ff:ff
+    inet 192.168.50.81/24 brd 192.168.50.255 scope global br-provider
+       valid_lft forever preferred_lft forever
+
+# Allow IP addr pairs cho port rồi
+[root@mdt32 ~]# openstack port show ea117a13-0cbb-49e0-9d4b-0243d747821b
++-----------------------+------------------------------------------------------------------------------+
+| Field                 | Value                                                                        |
++-----------------------+------------------------------------------------------------------------------+
+| admin_state_up        | UP                                                                           |
+| allowed_address_pairs | ip_address='0.0.0.0', mac_address='fa:16:3e:63:d4:f3'                        |
+| binding_host_id       | mdt32                                                                        |
+| binding_profile       |                                                                              |
+| binding_vif_details   | datapath_type='system', ovs_hybrid_plug='True', port_filter='True'           |
+| binding_vif_type      | ovs                                                                          |
+| binding_vnic_type     | normal                                                                       |
+| created_at            | 2019-09-12T03:50:52Z                                                         |
+| data_plane_status     | None                                                                         |
+| description           |                                                                              |
+| device_id             | c8680c1f-f382-46d3-9ce8-cb8a149cc267                                         |
+| device_owner          | compute:nova                                                                 |
+| dns_assignment        | None                                                                         |
+| dns_domain            | None                                                                         |
+| dns_name              | None                                                                         |
+| extra_dhcp_opts       |                                                                              |
+| fixed_ips             | ip_address='192.168.50.81', subnet_id='f83659e5-4cbe-49d8-97ce-1a19313be076' |
+| id                    | ea117a13-0cbb-49e0-9d4b-0243d747821b                                         |
+| mac_address           | fa:16:3e:63:d4:f3                                                            |
+| name                  | trangctl1                                                                    |
+| network_id            | 76b621d1-84f8-4986-a06d-b61213c5aea4                                         |
+| port_security_enabled | True                                                                         |
+| project_id            | 4dbbe3d45e744c63a88fa15a117c60a5                                             |
+| qos_policy_id         | None                                                                         |
+| revision_number       | 9                                                                            |
+| security_group_ids    | 94f446f5-4f67-4dc2-a11c-b2754ccbb6b9                                         |
+| status                | ACTIVE                                                                       |
+| tags                  |                                                                              |
+| trunk_details         | None                                                                         |
+| updated_at            | 2019-09-13T03:02:20Z                                                         |
++-----------------------+------------------------------------------------------------------------------+
+
+# Allow MAC addr pairs port br-provider
+neutron port-update ea117a13-0cbb-49e0-9d4b-0243d747821b --allowed_address_pairs list=true type=dict mac_address=96:e0:1d:a6:3d:4c,ip_address=192.168.50.81 mac_address=fa:16:3e:63:d4:f3,ip_address=0.0.0.0
+
