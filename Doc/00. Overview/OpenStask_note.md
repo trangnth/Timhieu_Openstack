@@ -205,4 +205,31 @@ openstack role show demo
 
 # Allow MAC addr pairs port br-provider
 neutron port-update ea117a13-0cbb-49e0-9d4b-0243d747821b --allowed_address_pairs list=true type=dict mac_address=96:e0:1d:a6:3d:4c,ip_address=192.168.50.81 mac_address=fa:16:3e:63:d4:f3,ip_address=0.0.0.0
+```
+
+### Một số các câu lệnh khởi động lại các service 
+
+```sh
+systemctl restart httpd
+
+systemctl restart openstack-glance-api openstack-glance-registry 
+
+systemctl restart openstack-nova-api.service \
+  openstack-nova-scheduler.service openstack-nova-conductor.service \
+  openstack-nova-novncproxy.service
+
+systemctl restart neutron-server.service neutron-openvswitch-agent.service neutron-dhcp-agent.service neutron-metadata-agent.service neutron-l3-agent.service
+```
+
+### Quản lý các cell
+
+* Xóa một cell
+
+```sh
+su -s /bin/sh -c "nova-manage cell_v2 list_cells" nova
+su -s /bin/sh -c "nova-manage cell_v2 delete_cell --force --cell_uuid 0176f49b-5efb-41b9-b029-09b7a829e40e" nova
+```
+
+
+
 
