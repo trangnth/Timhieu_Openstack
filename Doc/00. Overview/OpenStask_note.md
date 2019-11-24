@@ -230,6 +230,74 @@ su -s /bin/sh -c "nova-manage cell_v2 list_cells" nova
 su -s /bin/sh -c "nova-manage cell_v2 delete_cell --force --cell_uuid 0176f49b-5efb-41b9-b029-09b7a829e40e" nova
 ```
 
+### Mariadb
+
+* Khi thực hiện remote host DB mà gặp lỗi như sau:
+
+```sh
+[root@controller3 ~(openstack)]$ mysql -u root -ptrang1234 -h 192.168.40.71
+ERROR 1045 (28000): Access denied for user 'root'@'controller3' (using password: YES)
+```
+
+Thực hiện phân quyền cho user như sau:
+
+```sh
+[root@controller1 ~(openstack)]$ mysql -u root -ptrang1234
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 2508
+Server version: 10.1.20-MariaDB MariaDB Server
+
+Copyright (c) 2000, 2016, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> grant all privileges on *.* to root@'%' identified by 'trang1234' with grant option;
+Query OK, 0 rows affected (0.05 sec)
+
+MariaDB [(none)]> SELECT USER(), CURRENT_USER();
++----------------+----------------+
+| USER()         | CURRENT_USER() |
++----------------+----------------+
+| root@localhost | root@localhost |
++----------------+----------------+
+1 row in set (0.00 sec)
+
+MariaDB [(none)]> SELECT user, host FROM mysql.user;
++------------------+-------------+
+| user             | host        |
++------------------+-------------+
+| glance           | %           |
+| keystone         | %           |
+| neutron          | %           |
+| nova             | %           |
+| placement        | %           |
+| root             | %           |
+| root             | 127.0.0.1   |
+| root             | ::1         |
+| root             | controller1 |
+| clustercheckuser | localhost   |
+| glance           | localhost   |
+| keystone         | localhost   |
+| neutron          | localhost   |
+| nova             | localhost   |
+| placement        | localhost   |
+| root             | localhost   |
++------------------+-------------+
+16 rows in set (0.00 sec)
+
+MariaDB [(none)]> exit
+Bye
 
 
+[root@controller3 ~(openstack)]$ mysql -u root -ptrang1234 -h 192.168.40.71
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 2298
+Server version: 10.1.20-MariaDB MariaDB Server
 
+Copyright (c) 2000, 2016, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> exit
+Bye
+```
