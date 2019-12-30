@@ -301,3 +301,59 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 MariaDB [(none)]> exit
 Bye
 ```
+
+### Xem quotas
+
+Xem thông tin của một project
+
+```sh
+openstack project list
+PROJECT_ID=$(openstack project show -f value -c id admin)
+openstack quota show --default $PROJECT_ID
+```
+
+Ví dụ:
+
+```sh
+[root@mdt32 ~]# openstack quota show --default $PROJECT_ID
++----------------------+-------+
+| Field                | Value |
++----------------------+-------+
+| backup-gigabytes     | 1000  |
+| backups              | 10    |
+| cores                | 20    |
+| fixed-ips            | -1    |
+| floating-ips         | 50    |
+| gigabytes            | 1000  |
+| groups               | 10    |
+| health_monitors      | None  |
+| injected-file-size   | 10240 |
+| injected-files       | 5     |
+| injected-path-size   | 255   |
+| instances            | 10    |
+| key-pairs            | 100   |
+| l7_policies          | None  |
+| listeners            | None  |
+| load_balancers       | None  |
+| location             | None  |
+| name                 | None  |
+| networks             | 100   |
+| per-volume-gigabytes | -1    |
+| pools                | None  |
+| ports                | 500   |
+| project              | None  |
+| project_name         | admin |
+| properties           | 128   |
+| ram                  | 51200 |
+| rbac_policies        | 10    |
+| routers              | 10    |
+| secgroup-rules       | 100   |
+| secgroups            | 10    |
+| server-group-members | 10    |
+| server-groups        | 10    |
+| snapshots            | 10    |
+| subnet_pools         | -1    |
+| subnets              | 100   |
+| volumes              | 10    |
++----------------------+-------+
+```
