@@ -357,3 +357,39 @@ Ví dụ:
 | volumes              | 10    |
 +----------------------+-------+
 ```
+
+
+## Tạo file policy 
+oslopolicy-policy-generator --namespace glance > glance_policy.json
+oslopolicy-policy-generator --namespace cinder > cinder_policy.json
+oslopolicy-policy-generator --namespace nova > nova_policy.json
+
+
+## Một số command
+
+```sh
+ps -ef | grep dns
+cat /var/lib/neutron/dhcp/8ce63a91-4c3a-4e02-b573-0e9c89cb468c/opts
+cat /var/lib/neutron/dhcp/8ce63a91-4c3a-4e02-b573-0e9c89cb468c/host
+brctl show
+route -n
+ps -ef | grep haproxy
+cat /var/lib/neutron/ns-metadata-proxy/009e9e83-6cf8-4d2b-84c4-edfa4911033b.conf
+
+nova shelve 2816ad09-a61e-4d1d-b9f2-9e1f609a022b
+nova unshelve 2816ad09-a61e-4d1d-b9f2-9e1f609a022b
+openstack console url show
+openstack console url show 2816ad09-a61e-4d1d-b9f2-9e1f609a022b
+nova shelve 2816ad09-a61e-4d1d-b9f2-9e1f609a022b
+
+iptables -L
+iptables -S
+iptables -L -v -n
+```
+
+* Kiểm tra toàn bộ service được quản lý bởi systemctl có chứa từ "openstack"
+
+```sh
+systemctl list-units --type=service | grep openstack
+```
+
